@@ -1,0 +1,15 @@
+opencv-python
+ffmpeg-python
+numpy
+moviepy
+yt-dlp
+mss
+torch
+torchvision
+torchaudio
+pytorchvideo
+librosa
+flask
+fastapi
+uvicorn
+twilio
