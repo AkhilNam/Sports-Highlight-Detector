@@ -2,24 +2,112 @@ import cv2
 import argparse
 import time
 import os
+import subprocess
+import json
+from collections import deque
 from motion_detection import detect_motion
 
 # Setup output directory
 OUTPUT_DIR = "output"
+CLIPS_DIR = os.path.join(OUTPUT_DIR, "clips")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(CLIPS_DIR, exist_ok=True)
 
 # Highlight detection parameters
 HIGHLIGHT_COOLDOWN = 2.0  # seconds between highlights
-MIN_HIGHLIGHT_DURATION = 1.0  # minimum duration of a highlight
+MIN_HIGHLIGHT_DURATION = 2.0  # minimum duration of a highlight
+MAX_HIGHLIGHT_DURATION = 15.0  # maximum duration of a highlight
 FRAME_RATE = 30  # assuming 30fps, adjust based on your video
+PRE_ROLL_SECONDS = 1.5  # seconds to keep before motion starts
+POST_MOTION_SECONDS = 2.0  # seconds to keep recording after motion stops
+MIN_MOTION_TO_KEEP_RECORDING = 8.0  # minimum motion percentage to maintain recording
 
 def log(message):
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}")
 
-def get_video_capture(source):
-    return cv2.VideoCapture(source)
+def save_highlight_clip(frames, output_path, fps=30):
+    """Save a sequence of frames as a video clip"""
+    if not frames:
+        log("❌ No frames to save")
+        return False
+        
+    try:
+        height, width = frames[0].shape[:2]
+        
+        # Try different codecs in order of preference
+        codecs = [
+            ('avc1', '.mp4'),
+            ('mp4v', '.mp4'),
+            ('XVID', '.avi'),
+            ('MJPG', '.avi')
+        ]
+        
+        for codec, ext in codecs:
+            try:
+                # Update output path with correct extension
+                output_file = os.path.splitext(output_path)[0] + ext
+                
+                # Create VideoWriter
+                fourcc = cv2.VideoWriter_fourcc(*codec)
+                out = cv2.VideoWriter(output_file, fourcc, fps, (width, height))
+                
+                if not out.isOpened():
+                    log(f"⚠️ Failed to initialize VideoWriter with codec {codec}")
+                    continue
+                
+                # Write frames
+                for frame in frames:
+                    out.write(frame)
+                
+                out.release()
+                log(f"✅ Successfully saved clip with codec {codec}")
+                return True
+                
+            except Exception as e:
+                log(f"⚠️ Error with codec {codec}: {str(e)}")
+                continue
+                
+        log("❌ Failed to save clip with any codec")
+        return False
+        
+    except Exception as e:
+        log(f"❌ Error saving clip: {str(e)}")
+        return False
+
+def get_stream_url(url):
+    """Get the direct stream URL using yt-dlp"""
+    try:
+        # Run yt-dlp to get stream info
+        cmd = [
+            'yt-dlp',
+            '-f', 'best',  # Get best quality
+            '-g',  # Get direct URL
+            url
+        ]
+        direct_url = subprocess.check_output(cmd).decode('utf-8').strip()
+        return direct_url
+    except subprocess.CalledProcessError as e:
+        log(f"❌ Error getting stream URL: {e}")
+        return None
+
+def get_video_capture(source, is_stream=False):
+    """Get video capture object for file or stream"""
+    if is_stream:
+        log("🔄 Getting stream URL...")
+        direct_url = get_stream_url(source)
+        if not direct_url:
+            return None
+        log("✅ Got stream URL, connecting...")
+        cap = cv2.VideoCapture(direct_url)
+        
+        # Set buffer size to minimize delay
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)
+        return cap
+    else:
+        return cv2.VideoCapture(source)
 
 def get_screen_capture():
+    """Capture screen region"""
     import mss
     import numpy as np
     sct = mss.mss()
@@ -37,6 +125,22 @@ def process_frames(capture, mode="video", debug=False):
     highlight_start_time = 0
     is_highlight_active = False
     highlight_frames = []
+    
+    # Pre-roll buffer
+    pre_roll_size = int(PRE_ROLL_SECONDS * FRAME_RATE)
+    frame_buffer = deque(maxlen=pre_roll_size)
+    
+    # Post-motion tracking
+    last_significant_motion_time = 0
+    
+    # For preview window
+    cv2.namedWindow("Sports Highlights Detector", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("Sports Highlights Detector", 1280, 720)
+    
+    # For clips preview
+    latest_clip = None
+    show_clip = False
+    clip_frame_idx = 0
 
     if mode == "video":
         success, frame = capture.read()
@@ -45,51 +149,122 @@ def process_frames(capture, mode="video", debug=False):
 
     while success:
         current_time = frame_count / FRAME_RATE
+        
+        # Always add frame to pre-roll buffer
+        if frame is not None:
+            frame_buffer.append(frame.copy())
 
         if frame_count % sample_rate == 0:
             if prev_frame is not None:
-                motion_detected = detect_motion(prev_frame, frame, debug=debug)
+                motion_info = detect_motion(prev_frame, frame, debug=debug)
                 
                 if debug:
-                    log(f"Frame {frame_count}: Motion detected: {motion_detected}")
+                    log(f"Frame {frame_count}: Motion: {motion_info['motion_percentage']:.1f}%")
                 
-                if motion_detected and (current_time - last_highlight_time) >= HIGHLIGHT_COOLDOWN:
-                    if not is_highlight_active:
+                # Update last significant motion time if there's enough motion
+                if motion_info['significant_motion']:
+                    last_significant_motion_time = current_time
+                
+                if motion_info['motion_detected']:
+                    if not is_highlight_active and (current_time - last_highlight_time) >= HIGHLIGHT_COOLDOWN:
                         is_highlight_active = True
-                        highlight_start_time = current_time
-                        highlight_frames = []
-                        log(f"🎬 Starting new highlight at {current_time:.2f}s")
+                        highlight_start_time = current_time - PRE_ROLL_SECONDS
+                        highlight_frames = list(frame_buffer)
+                        log(f"🎬 Starting new highlight at {highlight_start_time:.2f}s (with {len(frame_buffer)} pre-roll frames)")
                     
-                    highlight_frames.append(frame.copy())
+                    if is_highlight_active:
+                        highlight_frames.append(frame.copy())
+                        if debug:
+                            log(f"📼 Collected frame {len(highlight_frames)} for current highlight")
                 
                 elif is_highlight_active:
-                    if (current_time - highlight_start_time) >= MIN_HIGHLIGHT_DURATION:
-                        # Save the highlight
-                        save_path = os.path.join(OUTPUT_DIR, f"highlight_{int(time.time())}.jpg")
-                        cv2.imwrite(save_path, highlight_frames[-1])
-                        log(f"✅ Saved highlight: {save_path}")
-                        last_highlight_time = current_time
+                    # Keep recording if there's still significant motion
+                    highlight_frames.append(frame.copy())
                     
-                    is_highlight_active = False
-                    highlight_frames = []
+                    # Check if we've hit max duration
+                    current_duration = current_time - highlight_start_time
+                    if current_duration >= MAX_HIGHLIGHT_DURATION:
+                        log(f"⏰ Max duration reached ({current_duration:.1f}s)")
+                        # Save the highlight video clip
+                        timestamp = int(time.time())
+                        log(f"💾 Attempting to save highlight with {len(highlight_frames)} frames...")
+                        clip_path = os.path.join(CLIPS_DIR, f"highlight_{timestamp}.mp4")
+                        if save_highlight_clip(highlight_frames, clip_path, FRAME_RATE):
+                            latest_clip = highlight_frames
+                            show_clip = True
+                            clip_frame_idx = 0
+                        last_highlight_time = current_time
+                        is_highlight_active = False
+                        highlight_frames = []
+                        continue
+
+                    # Only stop recording if we've had low motion for long enough
+                    time_since_motion = current_time - last_significant_motion_time
+                    if time_since_motion >= POST_MOTION_SECONDS:
+                        if (current_time - highlight_start_time) >= MIN_HIGHLIGHT_DURATION:
+                            # Save the highlight video clip
+                            timestamp = int(time.time())
+                            log(f"💾 Attempting to save highlight with {len(highlight_frames)} frames...")
+                            clip_path = os.path.join(CLIPS_DIR, f"highlight_{timestamp}.mp4")
+                            if save_highlight_clip(highlight_frames, clip_path, FRAME_RATE):
+                                latest_clip = highlight_frames
+                                show_clip = True
+                                clip_frame_idx = 0
+                            last_highlight_time = current_time
+                        else:
+                            log(f"⏳ Highlight too short ({current_time - highlight_start_time:.1f}s < {MIN_HIGHLIGHT_DURATION}s)")
+                        
+                        is_highlight_active = False
+                        highlight_frames = []
 
             prev_frame = frame.copy()
 
-            # Display (optional, can remove for headless mode)
-            cv2.imshow("Sports Highlights Detector", frame)
+            # Show either the live feed or the latest highlight clip
+            if show_clip and latest_clip:
+                display_frame = latest_clip[clip_frame_idx].copy()
+                clip_frame_idx = (clip_frame_idx + 1) % len(latest_clip)
+                if clip_frame_idx == 0:  # Clip finished playing
+                    show_clip = False
+                cv2.putText(display_frame, "REPLAY", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            else:
+                display_frame = frame.copy()
+                if is_highlight_active:
+                    duration = current_time - highlight_start_time
+                    cv2.putText(display_frame, "🔴 RECORDING", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                    cv2.putText(display_frame, f"Duration: {duration:.1f}s / {MAX_HIGHLIGHT_DURATION}s", (10, 70), 
+                              cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
+            cv2.imshow("Sports Highlights Detector", display_frame)
 
         frame_count += 1
 
         if mode == "video":
             success, frame = capture.read()
         else:
-            frame = next(capture)
+            try:
+                frame = next(capture)
+            except StopIteration:
+                log("⚠️ Stream ended, attempting to reconnect...")
+                if isinstance(capture, cv2.VideoCapture):
+                    capture.release()
+                    time.sleep(5)  # Wait before reconnecting
+                    capture = get_video_capture(args.stream_url, is_stream=True)
+                    if capture is None:
+                        break
+                    success, frame = capture.read()
+                else:
+                    break
 
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q'):
             log("🛑 Quitting detection.")
             break
+        elif key == ord('r'):  # Press 'r' to replay last highlight
+            if latest_clip:
+                show_clip = True
+                clip_frame_idx = 0
 
-    if mode == "video":
+    if isinstance(capture, cv2.VideoCapture):
         capture.release()
 
     cv2.destroyAllWindows()
@@ -98,7 +273,7 @@ def main():
     parser = argparse.ArgumentParser(description="Sports Highlights Detector")
     parser.add_argument("--mode", choices=["video", "live"], required=True, help="Choose mode: 'video' or 'live'")
     parser.add_argument("--file", type=str, help="Path to video file (if mode is 'video')")
-    parser.add_argument("--stream-url", type=str, help="Stream URL (if mode is 'live')")
+    parser.add_argument("--stream-url", type=str, help="YouTube/Twitch stream URL (if mode is 'live')")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode to visualize motion detection")
 
     args = parser.parse_args()
@@ -110,7 +285,11 @@ def main():
         capture = get_video_capture(args.file)
     elif args.mode == "live":
         if args.stream_url:
-            capture = get_video_capture(args.stream_url)
+            log("🎥 Connecting to stream...")
+            capture = get_video_capture(args.stream_url, is_stream=True)
+            if capture is None:
+                log("❌ Failed to connect to stream")
+                return
         else:
             capture = get_screen_capture()
 

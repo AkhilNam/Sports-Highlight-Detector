@@ -1,5 +1,15 @@
 import cv2
 import numpy as np
+from collections import deque
+
+class MotionTracker:
+    def __init__(self, smoothing_window=15):
+        self.motion_history = deque([0] * smoothing_window, maxlen=smoothing_window)
+        self.smoothing_window = smoothing_window
+    
+    def get_smoothed_motion(self, current_motion):
+        self.motion_history.append(current_motion)
+        return sum(self.motion_history) / self.smoothing_window
 
 def create_roi_mask(frame_shape):
     """Create a mask that focuses on the center of the frame where game action usually happens"""
@@ -14,6 +24,9 @@ def create_roi_mask(frame_shape):
     mask[margin_y:height-margin_y, margin_x:width-margin_x] = 255
     
     return mask
+
+# Create a global motion tracker
+motion_tracker = MotionTracker()
 
 def detect_motion(prev_frame, current_frame, threshold=35, debug=False):
     # Convert frames to HSV color space
@@ -49,13 +62,16 @@ def detect_motion(prev_frame, current_frame, threshold=35, debug=False):
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
     # Filter contours by size
-    min_contour_area = (prev_frame.shape[0] * prev_frame.shape[1]) * 0.01  # 1% of frame size
+    min_contour_area = (prev_frame.shape[0] * prev_frame.shape[1]) * 0.005  # 0.5% of frame size (reduced from 1%)
     significant_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > min_contour_area]
     
     # Calculate motion percentage (relative to ROI area)
     roi_area = np.sum(roi_mask == 255)
     motion_score = sum(cv2.contourArea(cnt) for cnt in significant_contours)
     motion_percentage = (motion_score / roi_area) * 100
+    
+    # Get smoothed motion percentage
+    smoothed_percentage = motion_tracker.get_smoothed_motion(motion_percentage)
     
     # Debug visualization
     if debug:
@@ -78,7 +94,7 @@ def detect_motion(prev_frame, current_frame, threshold=35, debug=False):
         
         # Add text showing motion percentage
         cv2.putText(debug_frame, 
-                   f"Motion: {motion_percentage:.1f}%", 
+                   f"Motion: {motion_percentage:.1f}% (Smoothed: {smoothed_percentage:.1f}%)", 
                    (10, 30), 
                    cv2.FONT_HERSHEY_SIMPLEX, 
                    1, 
@@ -88,6 +104,9 @@ def detect_motion(prev_frame, current_frame, threshold=35, debug=False):
         cv2.imshow("Motion Detection Debug", debug_frame)
         cv2.waitKey(1)
     
-    # Much stricter threshold - require significant motion
-    return (motion_percentage > 25.0  # Increased from 15% to 25%
-            and len(significant_contours) >= 1)  # Must have at least one large motion region
+    # Return both instant and smoothed motion detection
+    return {
+        'motion_detected': smoothed_percentage > 15.0,  # Lowered from 25% to 15%
+        'significant_motion': smoothed_percentage > 5.0,  # Lower threshold to maintain recording
+        'motion_percentage': smoothed_percentage
+    }

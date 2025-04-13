@@ -61,3 +61,10 @@ dmypy.json
 # Output clips
 output/
 clips/
+1q.mp4
+
+# Output directory
+output/
+
+# Debug images
+debug/

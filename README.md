@@ -1,119 +1,106 @@
+# Real-Time Sports Highlights Detector
 
-# 🏟️ Real-Time Sports Highlights Detector
+A Python application that automatically detects and extracts highlights from sports videos using OpenCV and advanced motion detection algorithms. Perfect for basketball, soccer, and other fast-paced sports.
 
-> Detect highlights from **live sports streams** or **full game recordings** automatically.  
-> Clips big moments, creates highlight reels, and optionally sends real-time alerts.
+## Features
 
----
+- 🎥 **Video Processing**: Process pre-recorded videos to extract highlights
+- 🏀 **Smart Motion Detection**: Advanced motion analysis with ROI masking and motion smoothing
+- ⏱️ **Intelligent Highlight Timing**: 
+  - Pre-roll capture (1.5s before motion starts)
+  - Post-motion recording (2.0s after motion stops)
+  - Minimum highlight duration (2.0s)
+  - Maximum highlight duration (15.0s)
+- 🎯 **Configurable Parameters**: Adjust motion thresholds, durations, and detection sensitivity
+- 🔍 **Debug Mode**: Visualize motion detection and processing in real-time
+- 📹 **Multiple Codec Support**: Automatically tries different video codecs for compatibility
+- 🔄 **Highlight Preview**: Instantly replay the last detected highlight
 
-## 🚀 Project Overview
+## Installation
 
-This project is a computer vision-powered system that watches sports games — either **live** or from **recorded footage** — and automatically detects highlights such as goals, dunks, or touchdowns. It saves exciting moments as clips, and can even compile full highlight reels.
-
-**Modes Supported:**
-- 🎥 **Full game video mode** — Process a game recording and extract all highlights.
-- 📡 **Live stream mode** — Detect highlights in real time from YouTube / Twitch / or screen-capture.
-
----
-
-## 🎯 Features
-
-- ✅ Real-time live stream analysis
-- ✅ Full-game video processing
-- ✅ Motion-based highlight detection
-- ✅ AI-based action recognition (optional, Phase 2)
-- ✅ Audio analysis for crowd and commentator excitement (optional, Phase 2)
-- ✅ Auto-save highlight clips
-- ✅ Auto-generate highlight reels
-- ✅ Optional: Live dashboard to view moments in real time
-- ✅ Optional: SMS / Email notifications for detected highlights
-
----
-
-## 🧩 Tech Stack
-
-| Component | Tools |
-|-----------|-------|
-| Frame Capture | OpenCV, ffmpeg, yt-dlp, mss (for screen cap) |
-| Motion Detection | Frame differencing, histogram analysis |
-| Action Recognition (Phase 2) | PyTorchVideo, SlowFast Networks, YOLOv8 |
-| Audio Analysis (Optional) | librosa, ffmpeg-python |
-| Clip Saving | ffmpeg-python, MoviePy |
-| Dashboard (Optional) | Flask / FastAPI + React.js |
-| Notifications (Optional) | Twilio / SMTP |
-| Deployment (Optional) | AWS EC2 / GCP VM |
-
----
-
-## 🗓️ Project Timeline
-
-| Week | Milestone |
-|------|-----------|
-| Week 1 | Dual-mode pipeline: live stream & video file + motion-based clip detection |
-| Week 2 | Add smart detection: AI models, optional audio analysis |
-| Week 3 | Auto-highlight reel generation, optional dashboard |
-| Week 4 (Stretch) | Real-time alerts, cloud deployment, multi-game support |
-
----
-
-## 🛠️ Installation
-
+1. Clone the repository:
 ```bash
-# Clone the repo
-git clone https://github.com/your-username/sports-highlights-detector.git
-cd sports-highlights-detector
+git clone https://github.com/yourusername/sports-highlight-detector.git
+cd sports-highlight-detector
+```
 
-# Create virtual environment
+2. Create a virtual environment (recommended):
+```bash
 python -m venv venv
-source venv/bin/activate  # Mac/Linux
-venv\Scripts\activate     # Windows
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
 
-# Install dependencies
+3. Install dependencies:
+```bash
 pip install -r requirements.txt
 ```
 
----
+## Usage
 
-## ⚙️ Usage
-
-**Video File Mode:**
+### Processing a Video File
 ```bash
-python detector.py --mode video --file path/to/game.mp4
+python detector.py --mode video --file path/to/your/video.mp4
 ```
 
-**Live Stream Mode:**
+### Debug Mode (with motion visualization)
 ```bash
-python detector.py --mode live --stream-url "https://youtube.com/stream"
+python detector.py --mode video --file path/to/your/video.mp4 --debug
 ```
 
-Clips will be saved automatically in the `output/` directory!
+### Parameters
+The following parameters can be adjusted in `detector.py`:
 
----
+```python
+# Timing Parameters
+HIGHLIGHT_COOLDOWN = 2.0      # seconds between highlights
+MIN_HIGHLIGHT_DURATION = 2.0  # minimum duration of a highlight
+MAX_HIGHLIGHT_DURATION = 15.0 # maximum duration of a highlight
+PRE_ROLL_SECONDS = 1.5        # seconds to keep before motion starts
+POST_MOTION_SECONDS = 2.0     # seconds to keep recording after motion stops
 
-## 🌟 Future Improvements
+# Motion Detection Parameters
+MIN_MOTION_TO_KEEP_RECORDING = 8.0  # minimum motion percentage to maintain recording
+```
 
-- Fine-tune action recognition models for specific sports
-- Improve audio-visual fusion for better highlight accuracy
-- Real-time social media auto-posting
-- Multi-stream support (monitor multiple games simultaneously)
-- Deploy to cloud for 24/7 monitoring
+### Controls
+- Press 'q' to quit the application
+- Press 'r' to replay the last highlight
+- In debug mode, motion detection visualization will be shown in a separate window
 
----
+## How It Works
 
-## 🤖 Contributing
+1. **Frame Processing**: The application processes video frames at a configurable sample rate
+2. **Motion Detection**: Uses HSV color space analysis with ROI masking to detect significant motion
+3. **Motion Smoothing**: Applies temporal smoothing to prevent false positives
+4. **Highlight Detection**: 
+   - Starts recording when significant motion is detected
+   - Includes pre-roll frames for context
+   - Continues recording during motion
+   - Adds post-motion frames to complete the action
+5. **Clip Saving**: Automatically saves highlights when motion ends or max duration is reached
 
-If you have ideas, feel free to open an issue or submit a pull request!  
-We welcome contributions that make the project better.
+## Output
 
----
+Highlights are saved in the `output/clips` directory with timestamps in the filename:
+```
+output/
+  └── clips/
+      ├── highlight_1234567890.mp4
+      ├── highlight_1234567891.mp4
+      └── ...
+```
 
-## 📄 License
+## Requirements
 
-This project is licensed under the MIT License.
+- Python 3.8+
+- OpenCV
+- NumPy
+- See `requirements.txt` for complete list
 
----
+## Contributing
 
-## 🎥 Demo
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-_(Coming soon)_  
-Stay tuned for a full video demo showcasing live highlight detection!
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details. 
