@@ -2,13 +2,19 @@
 opencv-python>=4.8.0  # Computer vision operations
 numpy>=1.24.0        # Numerical operations
 
+# Object Detection
+ultralytics>=8.0.0   # YOLOv8 for object detection
+torch>=2.0.0         # PyTorch for YOLO
+torchvision>=0.15.0  # Torch vision utilities
+
 # Stream capture
 yt-dlp>=2023.11.16   # YouTube/Twitch stream downloading
 mss>=9.0.1           # Screen capture
 
-# Optional: for saving clips (if needed later)
+# Video processing
 moviepy>=1.0.3       # Video editing/saving
 
 # Development dependencies (optional)
 black>=23.0.0        # Code formatting
 pylint>=2.17.0       # Code linting
+

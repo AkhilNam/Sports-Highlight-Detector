@@ -1,4 +1,3 @@
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -58,13 +57,29 @@ dmypy.json
 # VSCode
 .vscode/
 
-# Output clips
+# Output directories
 output/
 clips/
-1q.mp4
-
-# Output directory
-output/
-
-# Debug images
 debug/
+
+# Video files
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# YOLO model files
+*.pt
+*.onnx
+*.engine
+*.weights
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db

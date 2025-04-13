@@ -171,3 +171,56 @@ This will show:
 2. Adjust HSV channel weights based on testing
 3. Consider adding region-of-interest filtering
 4. Implement adaptive thresholds based on scene content 
+
+### Added
+- Initial release of the Sports Highlights Detector
+- Video processing mode for pre-recorded videos
+- Advanced motion detection with ROI masking
+- Intelligent highlight timing with pre-roll and post-motion capture
+- Multiple video codec support for compatibility
+- Debug mode with motion visualization
+- Highlight preview functionality
+
+### Features
+- **Motion Detection**
+  - HSV color space analysis
+  - ROI masking to focus on center of frame
+  - Motion smoothing over 15 frames
+  - Configurable motion thresholds
+  - Minimum contour area filtering
+
+- **Highlight Timing**
+  - Pre-roll capture (1.5s before motion)
+  - Post-motion recording (2.0s after motion)
+  - Minimum highlight duration (2.0s)
+  - Maximum highlight duration (15.0s)
+  - Cooldown period between highlights (2.0s)
+
+- **Video Processing**
+  - Support for multiple video codecs
+  - Automatic codec fallback
+  - Frame rate preservation
+  - Output directory management
+
+- **User Interface**
+  - Real-time motion visualization in debug mode
+  - Highlight duration display
+  - Recording status indicator
+  - Keyboard controls (q to quit, r to replay)
+
+### Technical Details
+- Python 3.8+ compatibility
+- OpenCV for video processing
+- NumPy for numerical operations
+- Efficient frame processing with configurable sample rate
+- Robust error handling and logging
+
+### Known Issues
+- None reported in initial release
+
+### Future Improvements
+- Live stream processing support
+- Customizable ROI regions
+- Advanced motion analysis algorithms
+- Support for multiple sports types
+- Batch processing capabilities 
