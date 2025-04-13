@@ -5,12 +5,6 @@ from collections import deque
 
 class ObjectTracker:
     def __init__(self, model_path='yolov8n.pt', confidence_threshold=0.5):
-        """
-        Initialize the object tracker with YOLOv8 model
-        Args:
-            model_path: Path to YOLOv8 model weights
-            confidence_threshold: Minimum confidence for detection
-        """
         self.model = YOLO(model_path)
         self.confidence_threshold = confidence_threshold
         self.track_history = deque(maxlen=30)  # Keep track of last 30 frames
