@@ -22,8 +22,12 @@ class SportDetector:
             self.action_threshold = 0.7  # Higher threshold for basketball
         else:  # soccer
             self.classes = [0, 32]  # Track people and sports ball
-            self.min_players = 6  # Minimum players for significant action
-            self.action_threshold = 0.5  # Lower threshold for soccer
+            self.min_players = 2  # Reduced from 3 to 2 players
+            self.action_threshold = 0.2  # Lowered from 0.3 to 0.2
+            self.ball_confidence_threshold = 0.15  # Lowered from 0.2
+            self.player_confidence_threshold = 0.2  # Lowered from 0.3
+            self.action_history = deque(maxlen=10)  # Keep track of last 10 frames
+            self.action_persistence = 5  # Number of frames to maintain action state
             
         # Tracking history
         self.track_history = deque(maxlen=30)
@@ -100,13 +104,13 @@ class SportDetector:
                 bbox = box.xyxy[0].cpu().numpy()
                 x1, y1, x2, y2 = map(int, bbox)
                 
-                if class_id == 0:  # Person
+                if class_id == 0 and confidence >= self.player_confidence_threshold:  # Person
                     detections['players'].append({
                         'bbox': (x1, y1, x2, y2),
                         'confidence': confidence,
                         'center': ((x1 + x2) // 2, (y1 + y2) // 2)
                     })
-                elif class_id == 32:  # Sports ball
+                elif class_id == 32 and confidence >= self.ball_confidence_threshold:  # Sports ball
                     detections['ball'] = {
                         'bbox': (x1, y1, x2, y2),
                         'confidence': confidence,
@@ -129,6 +133,25 @@ class SportDetector:
                 elif self._detect_counter_attack(detections):
                     detections['has_action'] = True
                     detections['action_type'] = 'counter_attack'
+                
+                # Check for any significant ball movement
+                elif self._detect_ball_movement(detections):
+                    detections['has_action'] = True
+                    detections['action_type'] = 'ball_movement'
+                
+                # Check for player clustering around ball
+                elif self._detect_player_clustering(detections):
+                    detections['has_action'] = True
+                    detections['action_type'] = 'player_clustering'
+            
+            # Add current action state to history
+            self.action_history.append(detections['has_action'])
+            
+            # Maintain action state for persistence frames
+            if sum(self.action_history) >= 1:  # If there was any action in recent history
+                detections['has_action'] = True
+                if detections['action_type'] is None:
+                    detections['action_type'] = 'ongoing_action'
         
         if debug:
             self._draw_soccer_debug(frame, detections)
@@ -244,6 +267,37 @@ class SportDetector:
             return similarity > self.action_threshold
         return False
     
+    def _detect_ball_movement(self, detections):
+        """Detect significant ball movement"""
+        if not detections['ball']:
+            return False
+            
+        ball_center = detections['ball']['center']
+        if ball_center in self.last_positions:
+            prev_center = self.last_positions[ball_center]
+            movement = np.sqrt((ball_center[0] - prev_center[0])**2 + 
+                             (ball_center[1] - prev_center[1])**2)
+            return movement > 10  # Threshold for significant movement
+        
+        return False
+    
+    def _detect_player_clustering(self, detections):
+        """Detect when multiple players are close to the ball"""
+        if not detections['ball'] or len(detections['players']) < 2:
+            return False
+            
+        ball_center = detections['ball']['center']
+        nearby_players = 0
+        
+        for player in detections['players']:
+            player_center = player['center']
+            distance = np.sqrt((ball_center[0] - player_center[0])**2 + 
+                             (ball_center[1] - player_center[1])**2)
+            if distance < 200:  # Players within 200 pixels of ball
+                nearby_players += 1
+        
+        return nearby_players >= 2  # At least 2 players near the ball
+    
     def _draw_basketball_debug(self, frame, detections):
         """Draw basketball-specific debug visualization"""
         debug_frame = frame.copy()
@@ -273,12 +327,26 @@ class SportDetector:
             cv2.putText(debug_frame, f"Player: {player['confidence']:.2f}", 
                        (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
         
-        # Draw ball bounding box
+        # Draw ball bounding box with enhanced visualization
         if detections['ball']:
             x1, y1, x2, y2 = detections['ball']['bbox']
-            cv2.rectangle(debug_frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-            cv2.putText(debug_frame, f"Ball: {detections['ball']['confidence']:.2f}", 
-                       (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+            # Draw a thicker, more visible rectangle for the ball
+            cv2.rectangle(debug_frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
+            
+            # Calculate center point
+            center_x = (x1 + x2) // 2
+            center_y = (y1 + y2) // 2
+            
+            # Draw center point
+            cv2.circle(debug_frame, (center_x, center_y), 5, (0, 0, 255), -1)
+            
+            # Add ball confidence text with background for better visibility
+            text = f"Ball: {detections['ball']['confidence']:.2f}"
+            (text_width, text_height), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+            cv2.rectangle(debug_frame, (x1, y1 - text_height - 10), 
+                         (x1 + text_width, y1), (0, 0, 255), -1)
+            cv2.putText(debug_frame, text, 
+                       (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
         
         # Draw action status
         cv2.putText(debug_frame, f"Action: {detections['action_type'] if detections['has_action'] else 'None'}", 

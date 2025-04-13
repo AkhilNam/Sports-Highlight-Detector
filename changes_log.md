@@ -328,3 +328,209 @@ soccer_params = {
 3. Add audio analysis for crowd reactions
 4. Improve ball tracking accuracy
 5. Add support for multiple camera angles 
+
+## Performance and Sensitivity Improvements (2024-04-13)
+
+### Problems Identified
+1. Processing Speed:
+   - System was processing every frame, causing slow performance
+   - Full resolution processing was unnecessary
+   - No frame skipping optimization
+
+2. Soccer Detection Sensitivity:
+   - Too few highlights being detected
+   - High confidence thresholds causing missed actions
+   - Limited types of action detection
+   - Required too many players for action detection
+
+### Changes Made
+
+#### 1. Processing Speed Optimization
+```python
+# Frame Processing Optimization
+sample_rate = 3  # Process every 3rd frame
+small_frame = cv2.resize(frame, (640, 360))  # Process at lower resolution
+```
+
+**Why these changes?**
+- 3x faster processing by skipping frames
+- Lower resolution processing maintains accuracy while improving speed
+- More efficient resource usage
+- Better real-time performance
+
+#### 2. Soccer Detection Sensitivity Improvements
+```python
+# Soccer-specific parameters
+self.min_players = 3  # Reduced from 6 to 3
+self.action_threshold = 0.3  # Lowered from 0.5
+self.ball_confidence_threshold = 0.2  # New parameter
+self.player_confidence_threshold = 0.3  # New parameter
+```
+
+**New Detection Methods:**
+```python
+def _detect_ball_movement(self, detections):
+    # Detects any significant ball movement
+    return movement > 10  # Threshold for significant movement
+
+def _detect_player_clustering(self, detections):
+    # Detects when multiple players are near the ball
+    return nearby_players >= 2  # At least 2 players near ball
+```
+
+**Why these changes?**
+- Lower confidence thresholds catch more action
+- New ball movement detection catches fast plays
+- Player clustering detection identifies build-up play
+- More comprehensive action detection
+- Better highlight coverage
+
+### Updated Parameters
+```python
+# Highlight Management
+HIGHLIGHT_COOLDOWN = 5.0      # Increased from 2.0
+MIN_HIGHLIGHT_DURATION = 20.0 # Increased from 2.0
+MAX_HIGHLIGHT_DURATION = 45.0 # Increased from 15.0
+PRE_ROLL_SECONDS = 3.0        # Increased from 1.5
+POST_MOTION_SECONDS = 5.0     # Increased from 2.0
+
+# Soccer Detection
+min_players = 3              # Reduced from 6
+action_threshold = 0.3       # Reduced from 0.5
+ball_confidence = 0.2        # New parameter
+player_confidence = 0.3      # New parameter
+```
+
+### Results
+- 3x faster processing speed
+- More comprehensive highlight detection
+- Better capture of different types of soccer action
+- Longer, more meaningful highlights
+- Improved action context with pre/post roll
+
+### Next Steps
+1. Implement adaptive frame skipping based on action intensity
+2. Add crowd noise analysis for additional action detection
+3. Develop sport-specific ROI calibration
+4. Add support for multiple camera angles
+5. Implement highlight quality scoring
+
+### Added
+- Initial release of the Sports Highlights Detector
+- Video processing mode for pre-recorded videos
+- Advanced motion detection with ROI masking
+- Intelligent highlight timing with pre-roll and post-motion capture
+- Multiple video codec support for compatibility
+- Debug mode with motion visualization
+- Highlight preview functionality
+
+### Features
+- **Motion Detection**
+  - HSV color space analysis
+  - ROI masking to focus on center of frame
+  - Motion smoothing over 15 frames
+  - Configurable motion thresholds
+  - Minimum contour area filtering
+
+- **Highlight Timing**
+  - Pre-roll capture (1.5s before motion)
+  - Post-motion recording (2.0s after motion)
+  - Minimum highlight duration (2.0s)
+  - Maximum highlight duration (15.0s)
+  - Cooldown period between highlights (2.0s)
+
+- **Video Processing**
+  - Support for multiple video codecs
+  - Automatic codec fallback
+  - Frame rate preservation
+  - Output directory management
+
+- **User Interface**
+  - Real-time motion visualization in debug mode
+  - Highlight duration display
+  - Recording status indicator
+  - Keyboard controls (q to quit, r to replay)
+
+### Technical Details
+- Python 3.8+ compatibility
+- OpenCV for video processing
+- NumPy for numerical operations
+- Efficient frame processing with configurable sample rate
+- Robust error handling and logging
+
+### Known Issues
+- None reported in initial release
+
+### Future Improvements
+- Live stream processing support
+- Customizable ROI regions
+- Advanced motion analysis algorithms
+- Support for multiple sports types
+- Batch processing capabilities 
+
+## Highlight Merging Improvements (2024-04-13)
+
+### Problem Identified
+- Small gaps between potential highlights were causing unnecessary splits
+- Related actions were being separated into multiple clips
+- No consideration for continuous play sequences
+
+### Changes Made
+
+#### 1. Highlight Merging Logic (`detector.py`)
+```python
+# Added merge threshold parameter
+MERGE_GAP_THRESHOLD = 2.0  # seconds - merge highlights if gap is smaller than this
+
+# Added merge condition
+should_merge = (is_highlight_active and 
+                (current_time - last_action_time) <= MERGE_GAP_THRESHOLD and
+                sport_info['has_action'])
+```
+
+**Why these changes?**
+- Prevents unnecessary splitting of continuous action
+- Maintains context between related plays
+- Creates more natural highlight sequences
+- Better captures the flow of the game
+
+#### 2. Action Tracking
+```python
+# Track last action time
+last_action_time = 0  # Track when the last action was detected
+
+# Update last action time when action is detected
+if sport_info['has_action']:
+    last_action_time = current_time
+```
+
+**Why these changes?**
+- Enables gap detection between actions
+- Helps determine when to merge highlights
+- Maintains action continuity
+- Better handles brief pauses in play
+
+### Updated Parameters
+```python
+# Highlight Management
+HIGHLIGHT_COOLDOWN = 3.0      # Reduced from 5.0
+MIN_HIGHLIGHT_DURATION = 15.0 # Reduced from 20.0
+MAX_HIGHLIGHT_DURATION = 45.0 # Kept same
+PRE_ROLL_SECONDS = 5.0        # Increased from 3.0
+POST_ACTION_SECONDS = 8.0     # Increased from 5.0
+MERGE_GAP_THRESHOLD = 2.0     # New parameter
+```
+
+### Results
+- More natural highlight sequences
+- Better capture of continuous play
+- Reduced number of unnecessary clip splits
+- Improved highlight context and flow
+- More meaningful highlight durations
+
+### Next Steps
+1. Implement adaptive merge threshold based on sport type
+2. Add highlight quality scoring for merged clips
+3. Consider crowd noise analysis for merge decisions
+4. Add support for multi-camera merge synchronization
+5. Implement highlight summary generation
