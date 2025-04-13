@@ -1,14 +1,6 @@
 import cv2
 import numpy as np
 
-# HSV Weight Configurations
-HSV_WEIGHTS = {
-    'default': (0.1, 0.2, 0.7),     # Current: Focus on brightness
-    'color': (0.3, 0.4, 0.3),       # Good for jersey detection
-    'motion': (0.1, 0.1, 0.8),      # Best for fast movement
-    'balanced': (0.33, 0.33, 0.34)  # Equal weights
-}
-
 def create_roi_mask(frame_shape):
     """Create a mask that focuses on the center of the frame where game action usually happens"""
     height, width = frame_shape[:2]
@@ -23,21 +15,7 @@ def create_roi_mask(frame_shape):
     
     return mask
 
-def detect_motion(prev_frame, current_frame, threshold=35, debug=False, hsv_preset='default'):
-    """
-    Detect motion between frames using HSV color space analysis.
-    
-    Args:
-        prev_frame: Previous video frame
-        current_frame: Current video frame
-        threshold: Motion detection threshold (default: 35)
-        debug: Whether to show debug visualization (default: False)
-        hsv_preset: HSV weight preset to use (default: 'default')
-                   Options: 'default', 'color', 'motion', 'balanced'
-    """
-    # Get HSV weights
-    h_weight, s_weight, v_weight = HSV_WEIGHTS.get(hsv_preset, HSV_WEIGHTS['default'])
-    
+def detect_motion(prev_frame, current_frame, threshold=35, debug=False):
     # Convert frames to HSV color space
     prev_hsv = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2HSV)
     current_hsv = cv2.cvtColor(current_frame, cv2.COLOR_BGR2HSV)
@@ -50,8 +28,8 @@ def detect_motion(prev_frame, current_frame, threshold=35, debug=False, hsv_pres
     s_diff = cv2.absdiff(prev_hsv[:,:,1], current_hsv[:,:,1])
     v_diff = cv2.absdiff(prev_hsv[:,:,2], current_hsv[:,:,2])
     
-    # Combine differences with configured weights
-    combined_diff = (h_diff * h_weight + s_diff * s_weight + v_diff * v_weight).astype(np.uint8)
+    # Combine differences with adjusted weights (focus heavily on value/brightness)
+    combined_diff = (h_diff * 0.1 + s_diff * 0.1 + v_diff * 0.8).astype(np.uint8)
     
     # Apply strong Gaussian blur to reduce noise
     combined_diff = cv2.GaussianBlur(combined_diff, (7, 7), 0)
@@ -98,9 +76,9 @@ def detect_motion(prev_frame, current_frame, threshold=35, debug=False, hsv_pres
                      (width-margin_x, height-margin_y), 
                      (0, 255, 0), 2)
         
-        # Add text showing motion percentage and HSV preset
+        # Add text showing motion percentage
         cv2.putText(debug_frame, 
-                   f"Motion: {motion_percentage:.1f}% ({hsv_preset})", 
+                   f"Motion: {motion_percentage:.1f}%", 
                    (10, 30), 
                    cv2.FONT_HERSHEY_SIMPLEX, 
                    1, 
