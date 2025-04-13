@@ -224,3 +224,107 @@ This will show:
 - Advanced motion analysis algorithms
 - Support for multiple sports types
 - Batch processing capabilities 
+
+## Sport-Specific Detection Improvements (2024-03-22)
+
+### Problem Identified
+- Generic motion detection not effective for different sports
+- Ball tracking in soccer was unreliable
+- Basketball detection needed sport-specific features
+- Debug visualization was insufficient
+
+### Changes Made
+
+#### 1. Sport-Specific Detection Architecture
+```python
+class SportDetector:
+    def __init__(self, sport_type="basketball", confidence_threshold=0.5):
+        self.sport_type = sport_type.lower()
+        self.confidence_threshold = confidence_threshold
+        self.model = YOLO('yolov8n.pt')
+        
+        # Sport-specific parameters
+        if self.sport_type == "basketball":
+            self.classes = [0]  # Only track people
+        else:  # soccer
+            self.classes = [0, 32]  # Track people and sports ball
+```
+
+**Why this change?**
+- Separate detection logic for each sport
+- Customizable parameters per sport
+- More accurate action detection
+- Better performance for specific sports
+
+#### 2. Enhanced Ball Tracking
+```python
+class BallTracker:
+    def __init__(self, max_history=10):
+        self.max_history = max_history
+        self.positions = deque(maxlen=max_history)
+        self.velocities = deque(maxlen=max_history-1)
+        self.last_position = None
+        self.predicted_position = None
+```
+
+**Why this change?**
+- Predicts ball position when detection is lost
+- Maintains ball trajectory history
+- Calculates ball velocity for action detection
+- Smoother tracking between frames
+
+#### 3. Improved Debug Visualization
+```python
+# Draw ball and trajectory
+if ball:
+    x1, y1, x2, y2, conf = ball
+    cv2.rectangle(debug_frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), 2)
+    ball_center = ((x1 + x2)/2, (y1 + y2)/2)
+    cv2.circle(debug_frame, (int(ball_center[0]), int(ball_center[1])), 5, (0, 0, 255), -1)
+    
+    # Draw ball trajectory
+    if len(self.ball_tracker.positions) > 1:
+        points = np.array(self.ball_tracker.positions, dtype=np.int32)
+        cv2.polylines(debug_frame, [points], False, (0, 255, 255), 2)
+```
+
+**Why this change?**
+- Visualizes ball trajectory
+- Shows ball velocity vector
+- Displays action type and statistics
+- Better debugging capabilities
+
+### Sport-Specific Parameters
+```python
+# Basketball Parameters
+basketball_params = {
+    'min_players_for_action': 2,
+    'min_player_confidence': 0.5,
+    'court_region_threshold': 0.3,
+    'fast_break_threshold': 0.4,
+}
+
+# Soccer Parameters
+soccer_params = {
+    'min_players_for_action': 3,
+    'min_player_confidence': 0.5,
+    'min_ball_confidence': 0.3,
+    'goal_region_threshold': 0.2,
+    'ball_speed_threshold': 0.2,
+    'min_players_near_ball': 2,
+    'ball_tracking_radius': 50,
+}
+```
+
+### Results
+- More accurate highlight detection for each sport
+- Better ball tracking in soccer
+- Improved action classification
+- Enhanced debugging capabilities
+
+### Next Steps
+1. Add support for more sports types
+2. Implement sport-specific ROI calibration
+3. Add audio analysis for crowd reactions
+4. Improve ball tracking accuracy
+5. Add support for multiple camera angles 

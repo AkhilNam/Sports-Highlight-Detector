@@ -6,7 +6,7 @@ import subprocess
 import json
 from collections import deque
 from motion_detection import detect_motion
-from object_detection import ObjectTracker
+from sport_detection import SportDetector
 
 # Setup output directory
 OUTPUT_DIR = "output"
@@ -21,13 +21,6 @@ MAX_HIGHLIGHT_DURATION = 15.0  # maximum duration of a highlight
 FRAME_RATE = 30  # assuming 30fps, adjust based on your video
 PRE_ROLL_SECONDS = 1.5  # seconds to keep before motion starts
 POST_MOTION_SECONDS = 2.0  # seconds to keep recording after motion stops
-MIN_MOTION_TO_KEEP_RECORDING = 8.0  # minimum motion percentage to maintain recording
-
-# Object detection parameters
-OBJECT_DETECTION_SAMPLE_RATE = 5  # Process every 5th frame for object detection
-MIN_PLAYERS_FOR_ACTION = 2  # Minimum number of players for significant action
-MIN_BALL_CONFIDENCE = 0.5  # Minimum confidence for ball detection
-MIN_PLAYER_CONFIDENCE = 0.5  # Minimum confidence for player detection
 
 def log(message):
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}")
@@ -124,7 +117,7 @@ def get_screen_capture():
         frame = cv2.cvtColor(screenshot, cv2.COLOR_BGRA2BGR)
         yield frame
 
-def process_frames(capture, mode="video", debug=False):
+def process_frames(capture, mode="video", sport="basketball", debug=False):
     prev_frame = None
     frame_count = 0
     sample_rate = 5  # Process every 5th frame
@@ -133,17 +126,12 @@ def process_frames(capture, mode="video", debug=False):
     is_highlight_active = False
     highlight_frames = []
     
-    # Initialize object tracker
-    object_tracker = ObjectTracker(confidence_threshold=0.5)
-    last_object_detection_time = 0
-    has_significant_action = False
+    # Initialize sport detector
+    sport_detector = SportDetector(sport_type=sport)
     
     # Pre-roll buffer
     pre_roll_size = int(PRE_ROLL_SECONDS * FRAME_RATE)
     frame_buffer = deque(maxlen=pre_roll_size)
-    
-    # Post-motion tracking
-    last_significant_motion_time = 0
     
     # For preview window
     cv2.namedWindow("Sports Highlights Detector", cv2.WINDOW_NORMAL)
@@ -168,25 +156,14 @@ def process_frames(capture, mode="video", debug=False):
 
         if frame_count % sample_rate == 0:
             if prev_frame is not None:
-                # Run motion detection
-                motion_info = detect_motion(prev_frame, frame, debug=debug)
-                
-                # Run object detection periodically
-                if frame_count % OBJECT_DETECTION_SAMPLE_RATE == 0:
-                    object_info = object_tracker.detect_objects(frame, debug=debug)
-                    has_significant_action = object_info['has_action']
-                    last_object_detection_time = current_time
+                # Run sport-specific detection
+                sport_info = sport_detector.detect_action(frame, debug=debug)
                 
                 if debug:
-                    log(f"Frame {frame_count}: Motion: {motion_info['motion_percentage']:.1f}%, Action: {has_significant_action}")
+                    log(f"Frame {frame_count}: Action: {sport_info['action_type'] if sport_info['has_action'] else 'None'}")
                 
-                # Update last significant motion time if there's enough motion
-                if motion_info['significant_motion']:
-                    last_significant_motion_time = current_time
-                
-                # Start highlight if we have significant motion OR significant action
-                if (motion_info['motion_detected'] or has_significant_action) and \
-                   not is_highlight_active and (current_time - last_highlight_time) >= HIGHLIGHT_COOLDOWN:
+                # Start highlight if we have significant action
+                if sport_info['has_action'] and not is_highlight_active and (current_time - last_highlight_time) >= HIGHLIGHT_COOLDOWN:
                     is_highlight_active = True
                     highlight_start_time = current_time - PRE_ROLL_SECONDS
                     highlight_frames = list(frame_buffer)
@@ -196,10 +173,6 @@ def process_frames(capture, mode="video", debug=False):
                     highlight_frames.append(frame.copy())
                     if debug:
                         log(f"📼 Collected frame {len(highlight_frames)} for current highlight")
-                
-                elif is_highlight_active:
-                    # Keep recording if there's still significant motion or action
-                    highlight_frames.append(frame.copy())
                     
                     # Check if we've hit max duration
                     current_duration = current_time - highlight_start_time
@@ -217,10 +190,9 @@ def process_frames(capture, mode="video", debug=False):
                         is_highlight_active = False
                         highlight_frames = []
                         continue
-
-                    # Only stop recording if we've had low motion and no action for long enough
-                    time_since_motion = current_time - last_significant_motion_time
-                    if time_since_motion >= POST_MOTION_SECONDS and not has_significant_action:
+                    
+                    # Only stop recording if action has ended
+                    if not sport_info['has_action']:
                         if (current_time - highlight_start_time) >= MIN_HIGHLIGHT_DURATION:
                             # Save the highlight video clip
                             timestamp = int(time.time())
@@ -253,8 +225,8 @@ def process_frames(capture, mode="video", debug=False):
                     cv2.putText(display_frame, "🔴 RECORDING", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                     cv2.putText(display_frame, f"Duration: {duration:.1f}s / {MAX_HIGHLIGHT_DURATION}s", (10, 70), 
                               cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                    if has_significant_action:
-                        cv2.putText(display_frame, "⚽ Action Detected", (10, 110), 
+                    if sport_info['has_action']:
+                        cv2.putText(display_frame, f"Action: {sport_info['action_type']}", (10, 110), 
                                   cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
             cv2.imshow("Sports Highlights Detector", display_frame)
@@ -297,7 +269,8 @@ def main():
     parser.add_argument("--mode", choices=["video", "live"], required=True, help="Choose mode: 'video' or 'live'")
     parser.add_argument("--file", type=str, help="Path to video file (if mode is 'video')")
     parser.add_argument("--stream-url", type=str, help="YouTube/Twitch stream URL (if mode is 'live')")
-    parser.add_argument("--debug", action="store_true", help="Enable debug mode to visualize motion detection")
+    parser.add_argument("--sport", choices=["basketball", "soccer"], default="basketball", help="Sport type for detection")
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode to visualize detection")
 
     args = parser.parse_args()
 
@@ -316,7 +289,7 @@ def main():
         else:
             capture = get_screen_capture()
 
-    process_frames(capture, mode=args.mode, debug=args.debug)
+    process_frames(capture, mode=args.mode, sport=args.sport, debug=args.debug)
 
 if __name__ == "__main__":
     main()
