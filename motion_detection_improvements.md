@@ -1,5 +1,5 @@
 # Motion Detection Improvements
-
+  
 ## Planned Enhancements
 
 ### 1. Adaptive Thresholding
