@@ -15,12 +15,13 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(CLIPS_DIR, exist_ok=True)
 
 # Highlight detection parameters
-HIGHLIGHT_COOLDOWN = 2.0  # seconds between highlights
-MIN_HIGHLIGHT_DURATION = 2.0  # minimum duration of a highlight
-MAX_HIGHLIGHT_DURATION = 15.0  # maximum duration of a highlight
+HIGHLIGHT_COOLDOWN = 3.0  # seconds between highlights
+MIN_HIGHLIGHT_DURATION = 15.0  # minimum duration of a highlight
+MAX_HIGHLIGHT_DURATION = 45.0  # maximum duration of a highlight
 FRAME_RATE = 30  # assuming 30fps, adjust based on your video
 PRE_ROLL_SECONDS = 1.5  # seconds to keep before motion starts
 POST_MOTION_SECONDS = 2.0  # seconds to keep recording after motion stops
+MERGE_GAP_THRESHOLD = 2.0  # seconds - merge highlights if gap is smaller than this
 MIN_MOTION_TO_KEEP_RECORDING = 8.0  # minimum motion percentage to maintain recording
 
 # Object detection parameters
@@ -127,11 +128,12 @@ def get_screen_capture():
 def process_frames(capture, mode="video", debug=False):
     prev_frame = None
     frame_count = 0
-    sample_rate = 5  # Process every 5th frame
+    sample_rate = 3  # Process every 3rd frame instead of every frame
     last_highlight_time = 0
     highlight_start_time = 0
     is_highlight_active = False
     highlight_frames = []
+    last_action_time = 0  # Track when the last action was detected
     
     # Initialize object tracker
     object_tracker = ObjectTracker(confidence_threshold=0.5)
@@ -166,16 +168,11 @@ def process_frames(capture, mode="video", debug=False):
         if frame is not None:
             frame_buffer.append(frame.copy())
 
+        # Only process every sample_rate frames
         if frame_count % sample_rate == 0:
             if prev_frame is not None:
-                # Run motion detection
-                motion_info = detect_motion(prev_frame, frame, debug=debug)
-                
-                # Run object detection periodically
-                if frame_count % OBJECT_DETECTION_SAMPLE_RATE == 0:
-                    object_info = object_tracker.detect_objects(frame, debug=debug)
-                    has_significant_action = object_info['has_action']
-                    last_object_detection_time = current_time
+                # Run sport-specific detection
+                sport_info = sport_detector.detect_action(frame, debug=debug)
                 
                 if debug:
                     log(f"Frame {frame_count}: Motion: {motion_info['motion_percentage']:.1f}%, Action: {has_significant_action}")
@@ -184,9 +181,8 @@ def process_frames(capture, mode="video", debug=False):
                 if motion_info['significant_motion']:
                     last_significant_motion_time = current_time
                 
-                # Start highlight if we have significant motion OR significant action
-                if (motion_info['motion_detected'] or has_significant_action) and \
-                   not is_highlight_active and (current_time - last_highlight_time) >= HIGHLIGHT_COOLDOWN:
+                # Start highlight if we have significant action
+                if sport_info['has_action'] and not is_highlight_active and (current_time - last_highlight_time) >= HIGHLIGHT_COOLDOWN:
                     is_highlight_active = True
                     highlight_start_time = current_time - PRE_ROLL_SECONDS
                     highlight_frames = list(frame_buffer)
@@ -200,6 +196,10 @@ def process_frames(capture, mode="video", debug=False):
                 elif is_highlight_active:
                     # Keep recording if there's still significant motion or action
                     highlight_frames.append(frame.copy())
+                    
+                    # Update last action time if we have action
+                    if sport_info['has_action']:
+                        last_action_time = current_time
                     
                     # Check if we've hit max duration
                     current_duration = current_time - highlight_start_time
@@ -217,10 +217,9 @@ def process_frames(capture, mode="video", debug=False):
                         is_highlight_active = False
                         highlight_frames = []
                         continue
-
-                    # Only stop recording if we've had low motion and no action for long enough
-                    time_since_motion = current_time - last_significant_motion_time
-                    if time_since_motion >= POST_MOTION_SECONDS and not has_significant_action:
+                    
+                    # Only stop recording if action has ended
+                    if not sport_info['has_action']:
                         if (current_time - highlight_start_time) >= MIN_HIGHLIGHT_DURATION:
                             # Save the highlight video clip
                             timestamp = int(time.time())
